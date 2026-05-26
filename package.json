@@ -1,0 +1,16 @@
+{
+  "name": "solaris-game",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "",
+  "main": "scripts/index.js",
+  "scripts": {
+    "serve": "node fileserver/server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "private": true,
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1"
+  }
+}
