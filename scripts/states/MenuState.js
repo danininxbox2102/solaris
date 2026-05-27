@@ -1,35 +1,42 @@
 import * as THREE from 'three';
 
 export class MenuState {
-    constructor(scene, cameraController) {
-        this.scene = scene;
+    constructor({ sceneController, cameraController, modelLoader, loadingOverlay, config }) {
+        this.sceneController = sceneController;
         this.cameraController = cameraController;
-        this.objects = [];
+        this.modelLoader = modelLoader;
+        this.loadingOverlay = loadingOverlay;
+        this.config = config;
+
+        this.scene = this.sceneController.createScene();
+        this.mixers = [];
+        this.alwaysOnTopObjects = new Set();
+        this.isLoaded = false;
         this.isActive = false;
     }
 
-    enter() {
-        if (this.isActive) {
-            return;
-        }
-
+    async enter() {
         this.isActive = true;
-
+        this.sceneController.setActiveScene(this.scene);
         this.setupCamera();
-        this.setupLights();
+
+        if (!this.isLoaded) {
+            this.loadingOverlay.setMessage('Загрузка главного меню...');
+            this.sceneController.setupDefaultWorld(this.scene);
+            this.setupLights();
+            await this.loadModels();
+            this.isLoaded = true;
+        }
     }
 
     exit() {
-        if (!this.isActive) {
-            return;
-        }
-
-        for (const object of this.objects) {
-            this.scene.remove(object);
-        }
-
-        this.objects = [];
         this.isActive = false;
+    }
+
+    update(delta) {
+        for (const mixer of this.mixers) {
+            mixer.update(delta);
+        }
     }
 
     setupCamera() {
@@ -44,40 +51,25 @@ export class MenuState {
         const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
         directionalLight.position.set(2.8, 1.2, 0.4);
 
-        const ambientLight = new THREE.AmbientLight(0xffffc2, 10);
-        ambientLight.position.set(2.8, 1.2, 0.4);
-
-        const cratesLight = new THREE.AmbientLight(0x6cb7d2, 5);
+        const cratesLight = new THREE.SpotLight(0x6cb7d2, 5);
         cratesLight.name = 'cratesLight';
-        cratesLight.position.set(10, .5, 0.4);
+        cratesLight.position.set(10, 0.5, 0.4);
 
-        // const cratesLightDebugObject = this.createLightDebugObject(cratesLight);
-
-
-        this.addMenuObject(directionalLight);
-        this.addMenuObject(cratesLight);
-        // this.addMenuObject(cratesLightDebugObject);
+        this.scene.add(directionalLight, cratesLight);
     }
 
-    createLightDebugObject(light) {
-        const marker = new THREE.Mesh(
-            new THREE.SphereGeometry(0.08, 16, 16),
-            new THREE.MeshBasicMaterial({
-                color: light.color,
-                depthTest: false,
-                depthWrite: false
-            })
-        );
+    async loadModels() {
+        const corridorModel = await this.modelLoader.load(this.config.models.corridor, {
+            onProgress: (progress) => this.loadingOverlay.setProgress(progress)
+        });
 
-        marker.name = `${light.name}DebugObject`;
-        marker.position.copy(light.position);
-        marker.renderOrder = 999;
+        this.scene.add(corridorModel.root);
+        this.alwaysOnTopObjects.add(corridorModel.root);
 
-        return marker;
-    }
+        if (corridorModel.mixer) {
+            this.mixers.push(corridorModel.mixer);
+        }
 
-    addMenuObject(object) {
-        this.scene.add(object);
-        this.objects.push(object);
+        this.loadingOverlay.hide();
     }
 }

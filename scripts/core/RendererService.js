@@ -25,6 +25,21 @@ export class RendererService {
         this.renderer.render(scene, camera);
     }
 
+    renderWithoutClear(scene, camera) {
+        const previousAutoClear = this.renderer.autoClear;
+        this.renderer.autoClear = false;
+
+        try {
+            this.renderer.render(scene, camera);
+        } finally {
+            this.renderer.autoClear = previousAutoClear;
+        }
+    }
+
+    clearDepth() {
+        this.renderer.clearDepth();
+    }
+
     dispose() {
         this.renderer.dispose();
         this.renderer.domElement.remove();
