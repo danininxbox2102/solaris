@@ -8,6 +8,9 @@ const app = new GameApplication({
     models: {
         corridor: 'http://localhost:3000/corridor/scene.gltf',
         station: 'http://localhost:3000/station/scene.gltf',
+        ship: 'http://localhost:3000/spaceship/scene.gltf',
+        hangar: 'http://localhost:3000/hangar/scene.gltf',
+        planet: 'http://localhost:3000/planet/scene.gltf',
     },
     audio: {
         settings: {
@@ -16,8 +19,8 @@ const app = new GameApplication({
             sfxVolume: 1
         },
         assets: {
-            // menuTheme: { url: './assets/audio/menu-theme.mp3', type: 'music', loop: true, volume: 0.8 },
-            clickUi: { url: './assets/sound/click_ui.mp3', type: 'sfx', volume: 0.1 }
+            menuTheme: { url: './assets/sound/main_menu_theme.mp3', type: 'music', loop: true, volume: 0.6 },
+            clickUi: { url: './assets/sound/click_ui.mp3', type: 'sfx', volume: 0.7 }
         }
     }
 });

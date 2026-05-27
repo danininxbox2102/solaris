@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { PlayerShip } from '../entities/PlayerShip.js';
+import { KeyboardMouseInput } from '../input/KeyboardMouseInput.js';
 
 export class OpenWorldState {
     constructor({ sceneController, cameraController, modelLoader, loadingOverlay, config }) {
@@ -11,6 +13,8 @@ export class OpenWorldState {
         this.scene = this.sceneController.createScene();
         this.mixers = [];
         this.alwaysOnTopObjects = new Set();
+        this.input = new KeyboardMouseInput();
+        this.playerShip = null;
         this.isLoaded = false;
         this.isActive = false;
     }
@@ -22,26 +26,41 @@ export class OpenWorldState {
 
         if (!this.isLoaded) {
             this.loadingOverlay.setMessage('Загрузка открытого мира...');
-            this.sceneController.setupDefaultWorld(this.scene, { gridSize: 80, gridDivisions: 40 });
+            this.sceneController.setupDefaultWorld(this.scene, { gridSize: 0, gridDivisions: 0 });
             this.setupLights();
-            this.setupWorldMarkers();
             await this.loadModels();
             this.isLoaded = true;
+        }
+
+        if (this.playerShip) {
+            this.input.start();
         }
     }
 
     exit() {
         this.isActive = false;
+        this.input.stop();
     }
 
     update(delta) {
         for (const mixer of this.mixers) {
             mixer.update(delta);
         }
+
+        if (this.playerShip) {
+            this.playerShip.update(delta);
+        }
+
+        if (this.planetModel) {
+
+            const player = this.playerShip.object;
+
+            this.planetModel.root.position.set(player.position.x+500,player.position.y,player.position.z + -500)
+        }
     }
 
     setupCamera() {
-        this.cameraController.setControlsEnabled(true);
+        this.cameraController.setControlsEnabled(false);
         this.cameraController.setView(
             new THREE.Vector3(18, 10, 18),
             new THREE.Vector3(0, 1.5, 0)
@@ -57,40 +76,45 @@ export class OpenWorldState {
         this.scene.add(sun, fill);
     }
 
-    setupWorldMarkers() {
-        const beaconMaterial = new THREE.MeshStandardMaterial({
-            color: 0x2a6f8f,
-            emissive: 0x10394a,
-            roughness: 0.35,
-            metalness: 0.4
-        });
-
-        for (const position of [
-            new THREE.Vector3(-14, 0.6, -10),
-            new THREE.Vector3(12, 0.6, 8),
-            new THREE.Vector3(-4, 0.6, 15)
-        ]) {
-            const beacon = new THREE.Mesh(
-                new THREE.CylinderGeometry(0.4, 0.8, 1.2, 24),
-                beaconMaterial
-            );
-            beacon.position.copy(position);
-            this.scene.add(beacon);
-        }
-    }
-
     async loadModels() {
         const stationModel = await this.modelLoader.load(this.config.models.station, {
             onProgress: (progress) => this.loadingOverlay.setProgress(progress)
         });
 
         stationModel.root.position.set(0, 1.5, 0);
-        stationModel.root.scale.set(3, 3, 3);
+        stationModel.root.scale.set(100, 100, 100);
         this.scene.add(stationModel.root);
 
         if (stationModel.mixer) {
             this.mixers.push(stationModel.mixer);
         }
+
+        const shipModel = await this.modelLoader.load(this.config.models.ship, {
+            onProgress: (progress) => this.loadingOverlay.setProgress(progress)
+        });
+
+
+        this.playerShip = new PlayerShip({
+            object: shipModel.root,
+            input: this.input,
+            cameraController: this.cameraController
+        });
+        this.scene.add(this.playerShip.object);
+
+        if (shipModel.mixer) {
+            this.mixers.push(shipModel.mixer);
+        }
+
+        const planetModel = await this.modelLoader.load(this.config.models.planet, {
+            onProgress: (progress) => this.loadingOverlay.setProgress(progress)
+        })
+
+        planetModel.root.position.set(500,0,-500)
+        planetModel.root.scale.set(100,100,100)
+
+        this.planetModel = planetModel.root;
+
+        this.scene.add(planetModel.root);
 
         this.loadingOverlay.hide();
     }

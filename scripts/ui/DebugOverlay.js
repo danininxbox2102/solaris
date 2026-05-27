@@ -1,12 +1,15 @@
 export class DebugOverlay {
-    constructor(selector) {
+    constructor(selector, gameApp) {
         this.element = document.querySelector(selector);
+        this.gameApp = gameApp;
     }
 
     update(camera) {
         if (!this.element) {
             return;
         }
+
+        if (this.gameApp.activeSceneName === 'menu') return;
 
         this.element.innerHTML = `
             Camera position: ${this.formatVector(camera.position)}<br>

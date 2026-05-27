@@ -44,7 +44,10 @@ export class ModelLoader {
         }
 
         const mixer = new THREE.AnimationMixer(root);
-        mixer.clipAction(animations[0]).play();
+
+        for (const animation of animations) {
+            mixer.clipAction(animation).play();
+        }
 
         return mixer;
     }

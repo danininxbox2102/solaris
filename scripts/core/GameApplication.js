@@ -30,7 +30,7 @@ export class GameApplication {
             ...config
         };
 
-        this.sceneController = new SceneController(this.config.backgroundColor);
+        this.sceneController = new SceneController(this.config.backgroundColor, this);
         this.rendererService = new RendererService(this.config.canvasParent);
         this.cameraController = new CameraController(
             this.config.camera,
@@ -41,7 +41,7 @@ export class GameApplication {
         this.soundManager.registerMany(this.config.audio.assets);
 
         this.loadingOverlay = new LoadingOverlay(this.config.loaderSelector);
-        this.debugOverlay = new DebugOverlay(this.config.debugSelector);
+        this.debugOverlay = new DebugOverlay(this.config.debugSelector, this);
 
         const sceneDependencies = {
             sceneController: this.sceneController,
@@ -76,8 +76,24 @@ export class GameApplication {
         window.addEventListener('resize', this.handleResize);
         this.handleResize();
 
+        this.skybox = await this.prepareSkybox()
+
         await this.switchScene('menu');
         this.loop.start();
+    }
+
+    async prepareSkybox() {
+        const texture = new THREE.CubeTextureLoader().load([
+            './assets/img/skybox/T_CentaurusA_pos_x.png',
+            './assets/img/skybox/T_CentaurusA_neg_x.png',
+            './assets/img/skybox/T_CentaurusA_pos_z.png',
+            './assets/img/skybox/T_CentaurusA_neg_z.png',
+            './assets/img/skybox/T_CentaurusA_neg_y.png',
+            './assets/img/skybox/T_CentaurusA_pos_y.png',
+        ]);
+
+        texture.colorSpace = THREE.SRGBColorSpace;
+        return texture;
     }
 
     async switchScene(sceneName) {

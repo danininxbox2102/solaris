@@ -7,7 +7,7 @@ export class MenuOverlay {
             return;
         }
 
-        const buttons = document.querySelectorAll('button[data-scene]');
+        const buttons = document.querySelectorAll('button');
 
         for (const button of buttons) {
             button.addEventListener('mouseover', () => {
@@ -18,11 +18,17 @@ export class MenuOverlay {
                 this.gameApp.switchScene(button.dataset.scene).then();
             });
         }
+
+        this.gameApp.soundManager.playMusic('menuTheme').then();
     }
 
     update() {
         if (!this.element) {
             return;
+        }
+
+        if (this.gameApp.activeSceneName !== "menu"){
+            this.gameApp.soundManager.stopMusic();
         }
 
         this.element.style.display = this.gameApp.activeSceneName === 'menu' ? 'flex' : 'none';
