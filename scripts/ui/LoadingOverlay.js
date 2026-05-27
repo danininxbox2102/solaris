@@ -4,11 +4,16 @@ export class LoadingOverlay {
     }
 
     setProgress(progress) {
+        this.setMessage(`Загрузка... ${progress}%`);
+    }
+
+    setMessage(message) {
         if (!this.element) {
             return;
         }
 
-        this.element.textContent = `Загрузка... ${progress}%`;
+        this.element.style.display = 'block';
+        this.element.textContent = message;
     }
 
     setError(message) {
