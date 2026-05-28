@@ -1,6 +1,13 @@
 import * as THREE from 'three';
 
 const WORLD_FORWARD = new THREE.Vector3(0, 0, -1);
+const HITBOX_DEBUG_MATERIAL = new THREE.MeshBasicMaterial({
+    color: 0x00ff88,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.45,
+    depthWrite: false
+});
 
 export class PlayerShip {
     constructor({ object, input, cameraController }) {
@@ -18,6 +25,9 @@ export class PlayerShip {
         this.yawQuaternion = new THREE.Quaternion();
         this.rollQuaternion = new THREE.Quaternion();
         this.mouseTurn = new THREE.Vector2();
+        this.previousPosition = new THREE.Vector3();
+        this.previousQuaternion = new THREE.Quaternion();
+        this.rollVelocity = 0;
 
         this.settings = {
             acceleration: 34,
@@ -29,6 +39,8 @@ export class PlayerShip {
             pitchSpeed: 1.9,
             yawSpeed: 1.55,
             rollSpeed: 2.8,
+            rollAcceleration: 12,
+            rollDamping: 2.4,
             mouseSensitivity: 0.0012,
             maxMouseDelta: 70,
             mouseSmoothing: 14,
@@ -49,11 +61,33 @@ export class PlayerShip {
         this.object.add(this.model);
     }
 
-    update(delta) {
+    setHitbox(hitbox) {
+        hitbox.name = 'PlayerShipHitbox';
+        hitbox.position.copy(this.model.position);
+        hitbox.rotation.copy(this.model.rotation);
+        hitbox.scale.copy(this.model.scale);
+        hitbox.visible = true;
+        hitbox.traverse((object) => {
+            if (object.isMesh) {
+                object.material = HITBOX_DEBUG_MATERIAL;
+            }
+        });
+
+        this.object.add(hitbox);
+    }
+
+    update(delta, resolveCollision) {
         const frameDelta = Math.min(delta, 0.05);
 
+        this.previousPosition.copy(this.object.position);
+        this.previousQuaternion.copy(this.object.quaternion);
         this.updateRotation(frameDelta);
         this.updateMovement(frameDelta);
+
+        if (resolveCollision) {
+            resolveCollision(this.previousPosition, this.previousQuaternion, frameDelta);
+        }
+
         this.updateCamera();
     }
 
@@ -61,7 +95,19 @@ export class PlayerShip {
         const pointerTurn = this.getPointerTurn(delta);
         const keyboardYaw = this.input.getAxis('KeyQ', 'KeyE');
         const keyboardPitch = this.input.getAxis('ArrowDown', 'ArrowUp');
-        const roll = this.input.getAxis('KeyA', 'KeyD');
+        const rollInput = this.input.getAxis('KeyA', 'KeyD');
+
+        this.rollVelocity += rollInput * this.settings.rollAcceleration * delta;
+        this.rollVelocity *= Math.exp(-this.settings.rollDamping * delta);
+        this.rollVelocity = THREE.MathUtils.clamp(
+            this.rollVelocity,
+            -this.settings.rollSpeed,
+            this.settings.rollSpeed
+        );
+
+        if (Math.abs(this.rollVelocity) < 0.001) {
+            this.rollVelocity = 0;
+        }
 
         this.pitchQuaternion.setFromAxisAngle(
             new THREE.Vector3(1, 0, 0),
@@ -73,7 +119,7 @@ export class PlayerShip {
         );
         this.rollQuaternion.setFromAxisAngle(
             new THREE.Vector3(0, 0, 1),
-            -roll * this.settings.rollSpeed * delta
+            -this.rollVelocity * delta
         );
 
         this.object.quaternion.multiply(this.yawQuaternion);
