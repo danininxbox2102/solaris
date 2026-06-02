@@ -3,6 +3,7 @@ export class KeyboardMouseInput {
         this.target = target;
         this.lockElement = document.body;
         this.keys = new Set();
+        this.pointerButtons = new Set();
         this.pointer = { x: 0, y: 0 };
         this.pointerDelta = { x: 0, y: 0 };
         this.isPointerLocked = false;
@@ -11,6 +12,7 @@ export class KeyboardMouseInput {
         this.handleKeyDown = this.handleKeyDown.bind(this);
         this.handleKeyUp = this.handleKeyUp.bind(this);
         this.handlePointerDown = this.handlePointerDown.bind(this);
+        this.handlePointerUp = this.handlePointerUp.bind(this);
         this.handlePointerMove = this.handlePointerMove.bind(this);
         this.handlePointerLockChange = this.handlePointerLockChange.bind(this);
     }
@@ -25,6 +27,7 @@ export class KeyboardMouseInput {
         this.target.addEventListener('keyup', this.handleKeyUp);
         this.target.addEventListener('pointermove', this.handlePointerMove);
         this.lockElement.addEventListener('pointerdown', this.handlePointerDown);
+        this.target.addEventListener('pointerup', this.handlePointerUp);
         document.addEventListener('pointerlockchange', this.handlePointerLockChange);
     }
 
@@ -38,12 +41,15 @@ export class KeyboardMouseInput {
         this.target.removeEventListener('keyup', this.handleKeyUp);
         this.target.removeEventListener('pointermove', this.handlePointerMove);
         this.lockElement.removeEventListener('pointerdown', this.handlePointerDown);
+        this.target.removeEventListener('pointerup', this.handlePointerUp);
         document.removeEventListener('pointerlockchange', this.handlePointerLockChange);
         this.keys.clear();
+        this.pointerButtons.clear();
         this.pointer.x = 0;
         this.pointer.y = 0;
         this.pointerDelta.x = 0;
         this.pointerDelta.y = 0;
+        this.isPointerLocked = false;
 
         if (document.pointerLockElement === this.lockElement) {
             document.exitPointerLock();
@@ -52,6 +58,10 @@ export class KeyboardMouseInput {
 
     isPressed(code) {
         return this.keys.has(code);
+    }
+
+    isPointerPressed(button = 0) {
+        return this.pointerButtons.has(button);
     }
 
     getAxis(negativeCode, positiveCode) {
@@ -78,12 +88,18 @@ export class KeyboardMouseInput {
         this.keys.delete(event.code);
     }
 
-    handlePointerDown() {
+    handlePointerDown(event) {
+        this.pointerButtons.add(event.button);
+
         if (document.pointerLockElement || !this.lockElement.requestPointerLock) {
             return;
         }
 
         this.lockElement.requestPointerLock().then();
+    }
+
+    handlePointerUp(event) {
+        this.pointerButtons.delete(event.button);
     }
 
     handlePointerMove(event) {

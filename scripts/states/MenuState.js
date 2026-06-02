@@ -49,15 +49,23 @@ export class MenuState {
             new THREE.Vector3(10, 1.1, -3)
         );
 
-        this.cameraController.controls.enablePan = false;
-        this.cameraController.controls.enableZoom = false;
-        this.cameraController.controls.enableRotate = false;
+        // this.cameraController.controls.enablePan = false;
+        // this.cameraController.controls.enableZoom = false;
+        // this.cameraController.controls.enableRotate = false;
     }
 
     setupLights() {
         const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
         directionalLight.position.set(3,10,0)
         directionalLight.lookAt(this.stationPos.x,this.stationPos.y,this.stationPos.z);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.set(2048, 2048);
+        directionalLight.shadow.camera.near = 0.1;
+        directionalLight.shadow.camera.far = 60;
+        directionalLight.shadow.camera.left = -20;
+        directionalLight.shadow.camera.right = 20;
+        directionalLight.shadow.camera.top = 20;
+        directionalLight.shadow.camera.bottom = -20;
 
         const directionalLight2 = new THREE.DirectionalLight(0xc24d00, 1);
         //directionalLight.position.set(2.8, 1.2, 0.4);
@@ -77,11 +85,36 @@ export class MenuState {
             onProgress: (progress) => this.loadingOverlay.setProgress(progress)
         });
 
+        this.setShadow(corridorModel.root, { receiveShadow: true });
         this.scene.add(corridorModel.root);
         this.alwaysOnTopObjects.add(corridorModel.root);
 
         if (corridorModel.mixer) {
             this.mixers.push(corridorModel.mixer);
+        }
+
+        const astronautModel = await this.modelLoader.load(this.config.models.astronaut, {
+            onProgress: (progress) => this.loadingOverlay.setProgress(progress),
+            autoPlayAnimations: false
+        });
+
+        astronautModel.root.position.set(8.5,-.09,-.1)
+        astronautModel.root.rotation.y = Math.PI
+        astronautModel.root.scale.set(0.75,0.75,0.75)
+
+        this.setShadow(astronautModel.root, { castShadow: true });
+
+        this.scene.add(astronautModel.root);
+        this.alwaysOnTopObjects.add(astronautModel.root);
+
+        if (astronautModel.mixer) {
+            const firstAnimation = astronautModel.animations[1];
+
+            if (firstAnimation) {
+                astronautModel.mixer.clipAction(firstAnimation).reset().play();
+            }
+
+            this.mixers.push(astronautModel.mixer);
         }
 
         const stationModel = await this.modelLoader.load(this.config.models.station, {
@@ -97,6 +130,8 @@ export class MenuState {
             this.mixers.push(stationModel.mixer);
         }
 
+
+
         const planetModel = await this.modelLoader.load(this.config.models.planet, {
             onProgress: (progress) => this.loadingOverlay.setProgress(progress)
         });
@@ -109,5 +144,16 @@ export class MenuState {
         this.scene.add(planetModel.root);
 
         this.loadingOverlay.hide();
+    }
+
+    setShadow(root, { castShadow = false, receiveShadow = false } = {}) {
+        root.traverse((object) => {
+            if (!object.isMesh) {
+                return;
+            }
+
+            object.castShadow = castShadow;
+            object.receiveShadow = receiveShadow;
+        });
     }
 }

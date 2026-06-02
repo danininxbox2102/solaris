@@ -156,16 +156,24 @@ class SoundInstance {
 class MusicController {
     constructor(soundManager) {
         this.soundManager = soundManager;
-        this.current = null;
-        this.currentId = null;
+        this.instancesById = new Map();
+        this.playingIds = new Set();
+        this.pendingPlayTokens = new Map();
     }
 
     async play(id, { restart = false, fadeIn = 0.5, fadeOut = 0.5, volume } = {}) {
-        if (this.currentId === id && this.current && !restart) {
-            return this.current;
+        const current = this.instancesById.get(id);
+
+        if (current && !restart) {
+            return current;
         }
 
-        this.stop({ fadeOut });
+        if (restart) {
+            this.stop(id, { fadeOut });
+        }
+
+        const playToken = Symbol(id);
+        this.pendingPlayTokens.set(id, playToken);
 
         const instance = await this.soundManager.createInstance(id, {
             channelName: 'music',
@@ -174,19 +182,50 @@ class MusicController {
             fadeIn
         });
 
-        this.current = instance;
-        this.currentId = id;
+        if (this.pendingPlayTokens.get(id) !== playToken) {
+            instance.dispose();
+            return null;
+        }
+
+        this.pendingPlayTokens.delete(id);
+        this.instancesById.set(id, instance);
+        this.playingIds.add(id);
         return instance.start({ fadeIn });
     }
 
-    stop({ fadeOut = 0.5 } = {}) {
-        if (!this.current) {
-            return;
+    stop(idOrOptions, options) {
+        const { id, stopOptions } = normalizeStopArguments(idOrOptions, options, { fadeOut: 0.5 });
+
+        if (!id) {
+            return this.stopAll(stopOptions);
         }
 
-        this.current.stop({ fadeOut });
-        this.current = null;
-        this.currentId = null;
+        this.pendingPlayTokens.delete(id);
+
+        const current = this.instancesById.get(id);
+
+        if (!current) {
+            return false;
+        }
+
+        current.stop(stopOptions);
+        this.instancesById.delete(id);
+        this.playingIds.delete(id);
+        return true;
+    }
+
+    stopAll(options = {}) {
+        const stoppedCount = this.instancesById.size;
+
+        this.pendingPlayTokens.clear();
+
+        for (const instance of this.instancesById.values()) {
+            instance.stop(options);
+        }
+
+        this.instancesById.clear();
+        this.playingIds.clear();
+        return stoppedCount;
     }
 }
 
@@ -194,6 +233,7 @@ class SfxController {
     constructor(soundManager) {
         this.soundManager = soundManager;
         this.instances = new Set();
+        this.instancesById = new Map();
     }
 
     async play(id, { volume, loop = false } = {}) {
@@ -201,19 +241,72 @@ class SfxController {
             channelName: 'sfx',
             volume,
             loop,
-            onEnded: (endedInstance) => this.instances.delete(endedInstance)
+            onEnded: (endedInstance) => this.removeInstance(id, endedInstance)
         });
 
         this.instances.add(instance);
+        this.addInstance(id, instance);
         return instance.start();
     }
 
-    stopAll() {
+    stop(idOrOptions, options) {
+        const { id, stopOptions } = normalizeStopArguments(idOrOptions, options);
+
+        if (!id) {
+            return this.stopAll(stopOptions);
+        }
+
+        const instances = this.instancesById.get(id);
+
+        if (!instances) {
+            return 0;
+        }
+
+        const stoppedCount = instances.size;
+
+        for (const instance of instances) {
+            instance.stop(stopOptions);
+            this.instances.delete(instance);
+        }
+
+        this.instancesById.delete(id);
+        return stoppedCount;
+    }
+
+    stopAll(options = {}) {
+        const stoppedCount = this.instances.size;
+
         for (const instance of this.instances) {
-            instance.stop();
+            instance.stop(options);
         }
 
         this.instances.clear();
+        this.instancesById.clear();
+        return stoppedCount;
+    }
+
+    addInstance(id, instance) {
+        if (!this.instancesById.has(id)) {
+            this.instancesById.set(id, new Set());
+        }
+
+        this.instancesById.get(id).add(instance);
+    }
+
+    removeInstance(id, instance) {
+        this.instances.delete(instance);
+
+        const instances = this.instancesById.get(id);
+
+        if (!instances) {
+            return;
+        }
+
+        instances.delete(instance);
+
+        if (instances.size === 0) {
+            this.instancesById.delete(id);
+        }
     }
 }
 
@@ -261,8 +354,8 @@ export class SoundManager {
         return this.music.play(id, options);
     }
 
-    stopMusic(options) {
-        this.music.stop(options);
+    stopMusic(idOrOptions, options) {
+        return this.music.stop(idOrOptions, options);
     }
 
     async playSfx(id, options) {
@@ -270,8 +363,8 @@ export class SoundManager {
         return this.sfx.play(id, options);
     }
 
-    stopSfx() {
-        this.sfx.stopAll();
+    stopSfx(idOrOptions, options) {
+        return this.sfx.stop(idOrOptions, options);
     }
 
     setMasterVolume(volume) {
@@ -386,4 +479,18 @@ export class SoundManager {
 
 function clampVolume(volume) {
     return Math.min(Math.max(volume, 0), 1);
+}
+
+function normalizeStopArguments(idOrOptions, options, defaults = {}) {
+    if (typeof idOrOptions === 'string') {
+        return {
+            id: idOrOptions,
+            stopOptions: { ...defaults, ...options }
+        };
+    }
+
+    return {
+        id: null,
+        stopOptions: { ...defaults, ...idOrOptions }
+    };
 }

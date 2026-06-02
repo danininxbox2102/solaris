@@ -10,7 +10,10 @@ import { MenuState } from '../states/MenuState.js';
 import { OpenWorldState } from '../states/OpenWorldState.js';
 import { HangarState } from '../states/HangarState.js';
 import { MenuOverlay } from '../ui/MenuOverlay.js';
+import { PauseOverlay } from '../ui/PauseOverlay.js';
+import { GameOverOverlay } from '../ui/GameOverOverlay.js';
 import { SoundManager } from '../audio/SoundManager.js';
+import {HudOverlay} from "../ui/HudOverlay.js";
 
 export class GameApplication {
     constructor(config) {
@@ -19,7 +22,7 @@ export class GameApplication {
             camera: {
                 fov: 60,
                 near: 0.1,
-                far: 1000,
+                far: 20000,
                 startPosition: new THREE.Vector3(2, 2, 4),
                 target: new THREE.Vector3(0, 1, 0)
             },
@@ -42,24 +45,32 @@ export class GameApplication {
 
         this.loadingOverlay = new LoadingOverlay(this.config.loaderSelector);
         this.debugOverlay = new DebugOverlay(this.config.debugSelector, this);
+        this.hudOverlay = new HudOverlay(this.config.hudSelector, this);
 
-        const sceneDependencies = {
+        this.sceneDependencies = {
             sceneController: this.sceneController,
             cameraController: this.cameraController,
             modelLoader: this.modelLoader,
             loadingOverlay: this.loadingOverlay,
-            config: this.config
+            config: this.config,
+            gameApp: this
         };
 
         this.sceneStates = new Map([
-            ['menu', new MenuState(sceneDependencies)],
-            ['open-world', new OpenWorldState(sceneDependencies)],
-            ['hangar', new HangarState(sceneDependencies)]
+            ['menu', this.createSceneState('menu')],
+            ['open-world', this.createSceneState('open-world')],
+            ['hangar', this.createSceneState('hangar')]
         ]);
         this.activeSceneName = null;
         this.activeSceneState = null;
+        this.isPaused = false;
+        this.isGameOver = false;
+        this.wasCameraControlsEnabledBeforePause = false;
+        this.hadPointerLock = false;
 
         this.menuOverlay = new MenuOverlay(this.config.menuSelector, this);
+        this.pauseOverlay = new PauseOverlay(this.config.pauseSelector, this);
+        this.gameOverOverlay = new GameOverOverlay(this.config.gameOverSelector, this);
 
         this.clock = new THREE.Clock();
         this.loop = new GameLoop({
@@ -68,12 +79,32 @@ export class GameApplication {
         });
 
         this.handleResize = this.handleResize.bind(this);
+        this.handleKeyDown = this.handleKeyDown.bind(this);
+        this.handlePointerLockChange = this.handlePointerLockChange.bind(this);
+    }
+
+    createSceneState(sceneName) {
+        if (sceneName === 'menu') {
+            return new MenuState(this.sceneDependencies);
+        }
+
+        if (sceneName === 'open-world') {
+            return new OpenWorldState(this.sceneDependencies);
+        }
+
+        if (sceneName === 'hangar') {
+            return new HangarState(this.sceneDependencies);
+        }
+
+        return null;
     }
 
     async start() {
         this.soundManager.installUnlockListeners();
 
         window.addEventListener('resize', this.handleResize);
+        window.addEventListener('keydown', this.handleKeyDown);
+        document.addEventListener('pointerlockchange', this.handlePointerLockChange);
         this.handleResize();
 
         this.skybox = await this.prepareSkybox()
@@ -104,6 +135,8 @@ export class GameApplication {
         }
 
         this.activeSceneState?.exit();
+        this.setGameOver(false);
+        this.setPaused(false);
         this.activeSceneName = sceneName;
         this.activeSceneState = nextSceneState;
 
@@ -118,10 +151,16 @@ export class GameApplication {
     update() {
         const delta = this.clock.getDelta();
 
-        this.activeSceneState?.update(delta);
-        this.cameraController.update();
+        if (!this.isPaused && !this.isGameOver) {
+            this.activeSceneState?.update(delta);
+            this.cameraController.update();
+        }
+
         this.debugOverlay.update(this.cameraController.camera);
         this.menuOverlay.update();
+        this.pauseOverlay.update();
+        this.gameOverOverlay.update();
+        this.hudOverlay.update();
     }
 
     render() {
@@ -255,10 +294,97 @@ export class GameApplication {
         this.rendererService.resize(window.innerWidth, window.innerHeight);
     }
 
+    handleKeyDown(event) {
+        if (event.code !== 'Escape' || this.activeSceneName === 'menu' || this.isGameOver) {
+            return;
+        }
+
+        event.preventDefault();
+        this.setPaused(!this.isPaused);
+    }
+
+    handlePointerLockChange() {
+        const hasPointerLock = Boolean(document.pointerLockElement);
+        const didExitPointerLock = this.hadPointerLock && !hasPointerLock;
+
+        this.hadPointerLock = hasPointerLock;
+
+        if (!didExitPointerLock || this.isPaused || this.activeSceneName !== 'open-world') {
+            return;
+        }
+
+        this.setPaused(true);
+    }
+
+    setPaused(isPaused) {
+        if (this.isGameOver && isPaused) {
+            return;
+        }
+
+        if (this.isPaused === isPaused) {
+            return;
+        }
+
+        this.isPaused = isPaused;
+
+        if (isPaused) {
+            this.wasCameraControlsEnabledBeforePause = this.cameraController.controls.enabled;
+            this.cameraController.setControlsEnabled(false);
+        } else {
+            this.cameraController.setControlsEnabled(this.wasCameraControlsEnabledBeforePause);
+        }
+
+        this.activeSceneState?.setPaused?.(isPaused);
+        this.pauseOverlay.update();
+    }
+
+    setGameOver(isGameOver) {
+        if (this.isGameOver === isGameOver) {
+            return;
+        }
+
+        this.isGameOver = isGameOver;
+        this.gameOverOverlay.update();
+    }
+
+    showGameOver() {
+        if (this.isGameOver) {
+            return;
+        }
+
+        this.setPaused(false);
+        this.cameraController.setControlsEnabled(false);
+
+        if (document.pointerLockElement) {
+            document.exitPointerLock();
+        }
+
+        this.setGameOver(true);
+    }
+
+    async restartOpenWorld() {
+        this.setGameOver(false);
+        this.setPaused(false);
+
+        const previousOpenWorld = this.sceneStates.get('open-world');
+
+        if (this.activeSceneState === previousOpenWorld) {
+            previousOpenWorld.exit();
+        }
+
+        this.sceneStates.set('open-world', this.createSceneState('open-world'));
+        this.activeSceneName = null;
+        this.activeSceneState = null;
+
+        await this.switchScene('open-world');
+    }
+
     destroy() {
         this.loop.stop();
         this.activeSceneState?.exit();
         window.removeEventListener('resize', this.handleResize);
+        window.removeEventListener('keydown', this.handleKeyDown);
+        document.removeEventListener('pointerlockchange', this.handlePointerLockChange);
         this.soundManager.dispose();
         this.rendererService.dispose();
     }

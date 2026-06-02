@@ -7,7 +7,7 @@ export class MenuOverlay {
             return;
         }
 
-        const buttons = document.querySelectorAll('button');
+        const buttons = document.querySelectorAll('button[data-scene]');
 
         for (const button of buttons) {
             button.addEventListener('mouseover', () => {
@@ -15,20 +15,23 @@ export class MenuOverlay {
             });
 
             button.addEventListener('click', () => {
-                this.gameApp.switchScene(button.dataset.scene).then();
+                if (button.dataset.scene){
+                    this.gameApp.switchScene(button.dataset.scene).then();
+                    this.gameApp.soundManager.stopMusic("menuTheme");
+                    this.gameApp.soundManager.stopMusic("stationAmbient");
+                } else {
+
+                }
             });
         }
 
         this.gameApp.soundManager.playMusic('menuTheme').then();
+        this.gameApp.soundManager.playMusic('stationAmbient').then();
     }
 
     update() {
         if (!this.element) {
             return;
-        }
-
-        if (this.gameApp.activeSceneName !== "menu"){
-            this.gameApp.soundManager.stopMusic();
         }
 
         this.element.style.display = this.gameApp.activeSceneName === 'menu' ? 'flex' : 'none';

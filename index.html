@@ -25,7 +25,7 @@
             display: block;
         }
 
-        .info {
+        .overlay {
             position: fixed;
             left: 16px;
             top: 16px;
@@ -47,6 +47,57 @@
             height: 100vh;
             background: rgb(0 0 0 / 0.35);
             z-index: 20;
+        }
+
+        #pause-menu {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 28px;
+            position: fixed;
+            inset: 0;
+            z-index: 40;
+            background: rgb(0 0 0 / 0.62);
+            color: white;
+        }
+
+        #game-over {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 28px;
+            position: fixed;
+            inset: 0;
+            z-index: 45;
+            background: rgb(0 0 0 / 0.72);
+            color: white;
+            text-align: center;
+        }
+
+        .pause-menu__title,
+        .game-over__title {
+            margin: 0;
+            font-size: 48px;
+            font-weight: 700;
+            letter-spacing: 0;
+        }
+
+        .game-over__subtitle {
+            margin: -12px 0 0;
+            max-width: 520px;
+            color: rgb(255 255 255 / 0.72);
+            font-size: 16px;
+            line-height: 1.45;
+        }
+
+        .pause-menu__buttons,
+        .game-over__buttons {
+            display: flex;
+            align-items: center;
+            flex-direction: column;
+            gap: 18px;
         }
 
         #menu img {
@@ -109,6 +160,47 @@
         .debug {
             top: 64px !important;
         }
+
+        @keyframes showUp {
+            0%{
+                transform: translateY(-100px);
+            }
+
+            100%{
+                transform: translateY(0);
+            }
+        }
+
+        .hud{
+
+            .hud__top{
+
+                .border-warning{
+                    display: none;
+                    height: 100%;
+                    width: 25%;
+                    background: url("./assets/img/border_warning.png") center center no-repeat;
+                    animation: showUp 1s cubic-bezier(0, 1.1, 0, 1.02);
+                }
+
+                height: 15%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            position: fixed;
+            left: 0;
+            top: 0;
+            font-size: 14px;
+            z-index: 7;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+
+        }
+
+
     </style>
 
     <script type="importmap">
@@ -122,8 +214,13 @@
 </head>
 
 <body>
-<div class="info" id="loader">Загрузка модели...</div>
-<div class="info debug"></div>
+<div class="overlay" id="loader">Загрузка модели...</div>
+<div class="overlay debug"></div>
+<div class="hud" id="hud">
+    <div class="hud__top">
+        <div class="border-warning" id="borderWarn"></div>
+    </div>
+</div>
 <nav class="scene-switcher" aria-label="Сцены">
     <button data-scene="menu">Меню</button>
     <button data-scene="open-world">Открытый мир</button>
@@ -135,6 +232,21 @@
         <button data-scene="open-world">Играть</button>
         <button>Настройки</button>
         <button>О проекте</button>
+    </div>
+</div>
+<div id="pause-menu" aria-label="Меню паузы">
+    <h2 class="pause-menu__title">Пауза</h2>
+    <div class="pause-menu__buttons">
+        <button data-pause-action="resume">Продолжить</button>
+        <button data-pause-action="menu">Главное меню</button>
+    </div>
+</div>
+<div id="game-over" aria-label="Игра окончена">
+    <h2 class="game-over__title">Игра окончена</h2>
+    <p class="game-over__subtitle">Корабль уничтожен</p>
+    <div class="game-over__buttons">
+        <button data-game-over-action="restart">Начать заново</button>
+        <button data-game-over-action="menu">Главное меню</button>
     </div>
 </div>
 <script type="module" src="./scripts/index.js"></script>
