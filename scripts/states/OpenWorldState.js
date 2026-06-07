@@ -7,6 +7,7 @@ import { StationCollisionSystem } from '../world/StationCollisionSystem.js';
 import { OpenWorldLoader } from '../world/OpenWorldLoader.js';
 import { BossFight } from "../world/BossFight.js";
 import { EnemySpawnSystem } from '../world/EnemySpawnSystem.js';
+import { AsteroidVoronoiExplosion } from '../effects/AsteroidVoronoiExplosion.js';
 
 const PLANET_ROTATION_SPEED = 0.03;
 const ASTEROID_COLLISION_DAMAGE = 10;
@@ -29,7 +30,11 @@ export class OpenWorldState {
         this.input = new KeyboardMouseInput();
         this.playerShip = null;
         this.stationCollision = new StationCollisionSystem();
-        this.asteroidField = new ProceduralAsteroidField({ scene: this.scene });
+        this.asteroidExplosion = new AsteroidVoronoiExplosion({ scene: this.scene });
+        this.asteroidField = new ProceduralAsteroidField({
+            scene: this.scene,
+            explosionEffect: this.asteroidExplosion
+        });
         this.blasterSystem = new BlasterSystem({
             scene: this.scene,
             input: this.input,
@@ -38,6 +43,7 @@ export class OpenWorldState {
         });
         this.enemySpawnSystem = new EnemySpawnSystem({
             scene: this.scene,
+            asteroidField: this.asteroidField,
             onPlayerDamage: () => {
                 this.gameApp.hudOverlay.updateHealthBar(this.playerShip.getHealthState());
             }
@@ -81,6 +87,7 @@ export class OpenWorldState {
             this.planetModel = loadedWorld.planetModel;
             this.asteroidField.setCenter(this.getPlanetWorldPosition());
             this.stationPos = loadedWorld.stationPos;
+            this.enemySpawnSystem.setSafeZone(this.stationPos, 200);
             this.mixers.push(...loadedWorld.mixers);
             this.isLoaded = true;
         }
@@ -101,6 +108,7 @@ export class OpenWorldState {
         this.engineAudio.stop();
         this.bossFight.end();
         this.enemySpawnSystem.clear();
+        this.asteroidExplosion.clear();
         this.gameApp.hudOverlay.hideBorderWarning();
         this.gameApp.hudOverlay.hideFlightReticle();
         this.gameApp.hudOverlay.hideStationMarker();
@@ -141,7 +149,7 @@ export class OpenWorldState {
 
         const d = Math.sqrt((playerX - homeX)**2 + (homeY - playerY)**2 + (homeZ - playerZ)**2);
 
-        if (d > 5000){
+        if (d > 500){
             this.gameApp.hudOverlay.displayBorderWarning();
             if (!this.bossFight.isActive) {
                 this.bossFight.start().then();
@@ -159,6 +167,7 @@ export class OpenWorldState {
 
         if (this.playerShip) {
             this.blasterSystem.update(delta);
+            this.asteroidExplosion.update(delta);
             this.engineAudio.update();
 
             this.playerShip.update(delta, (previousPosition, previousQuaternion, frameDelta) => {
@@ -202,7 +211,11 @@ export class OpenWorldState {
             return;
         }
 
-        const collisionCount = this.asteroidField.resolvePlayerCollision(playerSphere);
+        const collisionVelocity = this.playerShip.velocity.clone();
+        const collisionCount = this.asteroidField.resolvePlayerCollision(playerSphere, {
+            impactVelocity: collisionVelocity,
+            impactSpeed: collisionVelocity.length()
+        });
 
         if (collisionCount === 0) {
             return;

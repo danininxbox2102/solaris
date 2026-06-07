@@ -10,8 +10,8 @@ const BLASTER_SETTINGS = {
     radius: 0.32,
     length: 4.2,
     muzzleOffsets: [
-        new THREE.Vector3(-0.72, -0.08, -1.45),
-        new THREE.Vector3(0.72, -0.08, -1.45)
+        new THREE.Vector3(-0.72, 0, -1.45),
+        new THREE.Vector3(0.72, 0, -1.45)
     ]
 };
 const BLASTER_FORWARD = new THREE.Vector3(0, 0, -1);

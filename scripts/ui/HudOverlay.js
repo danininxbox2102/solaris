@@ -115,7 +115,7 @@ export class HudOverlay {
         const safeMaxHealth = Math.max(1, maxHealth ?? 1);
         const safeHealth = Math.max(0, health ?? 0);
         const healthRatio = THREE.MathUtils.clamp(
-            ratio ?? safeHealth / safeMaxHealth,
+            ratio ?? safeHealth / safeMaxHealth, // aaaa
             0,
             1
         );
@@ -374,7 +374,7 @@ export class HudOverlay {
 
     stopAlarm() {
         clearInterval(this.alarmIntervalId);
-        this.gameApp.soundManager.stopSfx();
+        this.gameApp.soundManager.stopSfx("borderAlarm");
     }
 
     displayBorderWarning() {
@@ -395,7 +395,7 @@ export class HudOverlay {
         this.borderWarningShown = false;
 
         this.element.querySelector('[id=borderWarn]').style.display = "none";
-        this.gameApp.soundManager.stopMusic();
+        this.gameApp.soundManager.stopMusic("borderTheme");
         this.stopAlarm();
     }
 

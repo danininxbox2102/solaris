@@ -17,10 +17,12 @@ const ASTEROID_FALLBACK_MATERIAL = new THREE.MeshStandardMaterial({
     roughness: 0.95,
     metalness: 0.05
 });
+const FRAGMENTED_ASTEROID_NAME_PATTERN = /(fragment|voronoi|shard|chunk)/i;
 
 export class ProceduralAsteroidField {
-    constructor({ scene, settings = {} }) {
+    constructor({ scene, settings = {}, explosionEffect = null }) {
         this.scene = scene;
+        this.explosionEffect = explosionEffect;
         this.settings = {
             ...DEFAULT_SETTINGS,
             ...settings
@@ -48,11 +50,23 @@ export class ProceduralAsteroidField {
     collectPrototypes(root, { weight = 1 } = {}) {
         const worldScale = new THREE.Vector3();
         const prototypes = [];
+        const fragmentedRoots = this.collectFragmentedPrototypeRoots(root);
 
         root.updateMatrixWorld(true);
 
+        for (const fragmentedRoot of fragmentedRoots) {
+            prototypes.push({
+                object: fragmentedRoot,
+                scale: fragmentedRoot.getWorldScale(worldScale).clone()
+            });
+        }
+
         root.traverse((object) => {
             if (!object.isMesh || !object.geometry) {
+                return;
+            }
+
+            if (fragmentedRoots.some((fragmentedRoot) => this.isDescendantOf(object, fragmentedRoot))) {
                 return;
             }
 
@@ -65,6 +79,7 @@ export class ProceduralAsteroidField {
                 material: object.material,
                 scale: object.getWorldScale(worldScale).clone()
             });
+            this.explosionEffect?.prepareGeometry(object.geometry, object.material);
         });
 
         if (prototypes.length === 0) {
@@ -76,6 +91,30 @@ export class ProceduralAsteroidField {
             prototypes,
             weight
         });
+    }
+
+    collectFragmentedPrototypeRoots(root) {
+        const roots = [];
+
+        root.traverse((object) => {
+            if (!FRAGMENTED_ASTEROID_NAME_PATTERN.test(object.name)) {
+                return;
+            }
+
+            let meshCount = 0;
+
+            object.traverse((child) => {
+                if (child.isMesh && child.geometry) {
+                    meshCount += 1;
+                }
+            });
+
+            if (meshCount > 1) {
+                roots.push(object);
+            }
+        });
+
+        return roots;
     }
 
     registerStaticRoot(root) {
@@ -143,7 +182,9 @@ export class ProceduralAsteroidField {
             }
 
             const prototype = this.getPrototype(random);
-            const mesh = new THREE.Mesh(prototype.geometry, prototype.material);
+            const mesh = prototype.object
+                ? prototype.object.clone(true)
+                : new THREE.Mesh(prototype.geometry, prototype.material);
             const scale = THREE.MathUtils.lerp(this.settings.minScale, this.settings.maxScale, random());
 
             mesh.name = 'ProceduralAsteroid';
@@ -218,6 +259,28 @@ export class ProceduralAsteroidField {
     }
 
     createTarget(mesh, health) {
+        if (!mesh.isMesh) {
+            const bounds = new THREE.Box3().setFromObject(mesh);
+            const sphere = new THREE.Sphere();
+
+            bounds.getBoundingSphere(sphere);
+            mesh.getWorldScale(this.asteroidScale);
+            mesh.worldToLocal(sphere.center);
+            sphere.radius /= Math.max(
+                this.asteroidScale.x,
+                this.asteroidScale.y,
+                this.asteroidScale.z
+            );
+
+            return {
+                mesh,
+                localSphere: sphere,
+                worldSphere: new THREE.Sphere(),
+                health,
+                maxHealth: health
+            };
+        }
+
         if (!mesh.geometry.boundingSphere) {
             mesh.geometry.computeBoundingSphere();
         }
@@ -284,15 +347,13 @@ export class ProceduralAsteroidField {
         target.health -= damage;
 
         if (target.health > 0) {
-            const healthRatio = target.health / target.maxHealth;
-            target.mesh.scale.multiplyScalar(0.92 + healthRatio * 0.02);
             return;
         }
 
         this.destroyTarget(target);
     }
 
-    resolvePlayerCollision(playerSphere) {
+    resolvePlayerCollision(playerSphere, impactOptions = {}) {
         let collisionCount = 0;
 
         for (const target of this.targets) {
@@ -306,15 +367,25 @@ export class ProceduralAsteroidField {
                 continue;
             }
 
-            this.destroyTarget(target);
+            const impactWorldPoint = target.worldSphere.clampPoint(
+                playerSphere.center,
+                this.closestHitPoint
+            ).clone();
+
+            this.destroyTarget(target, {
+                ...impactOptions,
+                impactWorldPoint,
+                impactRadius: impactOptions.impactRadius ?? playerSphere.radius
+            });
             collisionCount += 1;
         }
 
         return collisionCount;
     }
 
-    destroyTarget(target) {
+    destroyTarget(target, explosionOptions = {}) {
         target.health = 0;
+        this.explosionEffect?.spawnFromMesh(target.mesh, explosionOptions);
         target.mesh.visible = false;
     }
 
@@ -376,6 +447,20 @@ export class ProceduralAsteroidField {
 
     getCellKey(x, z) {
         return `${x}:${z}`;
+    }
+
+    isDescendantOf(object, ancestor) {
+        let current = object;
+
+        while (current) {
+            if (current === ancestor) {
+                return true;
+            }
+
+            current = current.parent;
+        }
+
+        return false;
     }
 
     createRandom(cellX, cellZ, index) {

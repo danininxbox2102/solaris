@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { EnemyShip } from '../entities/EnemyShip.js';
+import { EnemyGroupCoordinator } from '../ai/EnemyGroupCoordinator.js';
+import { EnemyRole } from '../ai/EnemyAIProfiles.js';
 
 const DEFAULT_SETTINGS = {
     maxEnemies: 12,
@@ -13,10 +15,18 @@ const DEFAULT_SETTINGS = {
     projectileSpeed: 125,
     projectileLifetime: 3.8,
     projectileDamage: 6,
-    projectileHitRadius: 9
+    projectileHitRadius: 9,
+    safeZoneRadius: 200
 };
 const ENEMY_PROJECTILE_FORWARD = new THREE.Vector3(0, 0, -1);
 const ENEMY_PROJECTILE_AXIS = new THREE.Vector3(0, 0, 1);
+const ENEMY_PROFILES = ['pirateScout', 'pirateFighter', 'defenseDrone'];
+const ENEMY_ROLES = [
+    EnemyRole.Attacker,
+    EnemyRole.Flanker,
+    EnemyRole.Interceptor,
+    EnemyRole.Defender
+];
 const ENEMY_PROJECTILE_MATERIAL = new THREE.MeshBasicMaterial({
     color: 0xff3344,
     transparent: true,
@@ -27,23 +37,30 @@ const ENEMY_PROJECTILE_MATERIAL = new THREE.MeshBasicMaterial({
 });
 
 export class EnemySpawnSystem {
-    constructor({ scene, settings = {}, onPlayerDamage = null }) {
+    constructor({ scene, settings = {}, onPlayerDamage = null, asteroidField = null }) {
         this.scene = scene;
         this.settings = {
             ...DEFAULT_SETTINGS,
             ...settings
         };
         this.onPlayerDamage = onPlayerDamage;
+        this.asteroidField = asteroidField;
         this.playerShip = null;
         this.enemies = [];
         this.projectiles = [];
         this.spawnCooldown = 0;
+        this.spawnCount = 0;
+        this.safeZoneCenter = new THREE.Vector3();
+        this.hasSafeZone = false;
+        this.isSafeZoneActive = false;
+        this.groupCoordinator = new EnemyGroupCoordinator();
         this.ray = new THREE.Ray();
         this.segment = new THREE.Vector3();
         this.closestHitPoint = new THREE.Vector3();
         this.toCenter = new THREE.Vector3();
         this.projectileDirection = new THREE.Vector3();
         this.projectileStart = new THREE.Vector3();
+        this.projectileForward = new THREE.Vector3();
         this.projectileGeometry = null;
     }
 
@@ -55,22 +72,46 @@ export class EnemySpawnSystem {
         }
     }
 
+    setSafeZone(center, radius = this.settings.safeZoneRadius) {
+        if (!center) {
+            this.hasSafeZone = false;
+            this.isSafeZoneActive = false;
+            return;
+        }
+
+        this.safeZoneCenter.copy(center);
+        this.settings.safeZoneRadius = radius;
+        this.hasSafeZone = true;
+    }
+
     update(delta) {
         if (!this.playerShip?.isAlive) {
             return;
         }
 
+        this.updateSafeZoneState();
         this.spawnCooldown -= delta;
 
-        if (this.spawnCooldown <= 0) {
+        if (!this.isSafeZoneActive && this.spawnCooldown <= 0) {
             this.spawnCooldown = this.settings.spawnInterval;
             this.trySpawn();
         }
 
+        if (this.isSafeZoneActive) {
+            this.deactivateProjectiles();
+        }
+
+        this.groupCoordinator.update(this.enemies);
+
         for (let i = this.enemies.length - 1; i >= 0; i--) {
             const enemy = this.enemies[i];
 
-            enemy.update(delta, (attacker) => this.fireAtPlayer(attacker));
+            enemy.ai?.setSafeZoneState({
+                isPlayerInSafeZone: this.isSafeZoneActive,
+                center: this.safeZoneCenter,
+                radius: this.settings.safeZoneRadius
+            });
+            enemy.update(delta, (attacker, aimPosition) => this.fireAtPlayer(attacker, aimPosition));
 
             if (!enemy.isAlive || this.shouldDespawn(enemy)) {
                 enemy.removeFromScene();
@@ -82,15 +123,25 @@ export class EnemySpawnSystem {
     }
 
     trySpawn() {
-        if (this.enemies.length >= this.settings.maxEnemies || Math.random() > this.settings.spawnChance) {
+        if (
+            this.isSafeZoneActive ||
+            this.enemies.length >= this.settings.maxEnemies ||
+            Math.random() > this.settings.spawnChance
+        ) {
             return;
         }
 
         const enemy = new EnemyShip({
             position: this.createSpawnPosition(),
-            target: this.playerShip
+            target: this.playerShip,
+            profile: ENEMY_PROFILES[this.spawnCount % ENEMY_PROFILES.length],
+            role: ENEMY_ROLES[this.spawnCount % ENEMY_ROLES.length],
+            getAllies: () => this.enemies,
+            obstacleProvider: this.asteroidField,
+            projectileSpeed: this.settings.projectileSpeed
         });
 
+        this.spawnCount += 1;
         enemy.addToScene(this.scene);
         this.enemies.push(enemy);
     }
@@ -168,8 +219,8 @@ export class EnemySpawnSystem {
         enemy.damage(damage, { type: 'blaster' });
     }
 
-    fireAtPlayer(enemy) {
-        if (!this.playerShip?.isAlive) {
+    fireAtPlayer(enemy, aimPosition = null) {
+        if (!this.playerShip?.isAlive || this.isSafeZoneActive) {
             return;
         }
 
@@ -180,8 +231,14 @@ export class EnemySpawnSystem {
         }
 
         this.projectileStart.copy(enemy.object.position)
-            .addScaledVector(ENEMY_PROJECTILE_FORWARD.clone().applyQuaternion(enemy.object.quaternion), 9);
-        this.projectileDirection.subVectors(this.playerShip.object.position, this.projectileStart).normalize();
+            .addScaledVector(
+                this.projectileForward.copy(ENEMY_PROJECTILE_FORWARD).applyQuaternion(enemy.object.quaternion),
+                9
+            );
+        this.projectileDirection.subVectors(
+            aimPosition ?? this.playerShip.object.position,
+            this.projectileStart
+        ).normalize();
 
         projectile.active = true;
         projectile.life = this.settings.projectileLifetime;
@@ -255,6 +312,14 @@ export class EnemySpawnSystem {
         projectile.object.visible = false;
     }
 
+    deactivateProjectiles() {
+        for (const projectile of this.projectiles) {
+            if (projectile.active) {
+                this.deactivateProjectile(projectile);
+            }
+        }
+    }
+
     clear() {
         for (const enemy of this.enemies) {
             enemy.removeFromScene();
@@ -266,6 +331,11 @@ export class EnemySpawnSystem {
 
         this.enemies = [];
         this.spawnCooldown = 0;
+    }
+
+    updateSafeZoneState() {
+        this.isSafeZoneActive = this.hasSafeZone &&
+            this.playerShip.object.position.distanceTo(this.safeZoneCenter) <= this.settings.safeZoneRadius;
     }
 
     getRaySphereSegmentHitDistance(ray, center, sphereRadius, segmentLength, radius) {
